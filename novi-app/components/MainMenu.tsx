@@ -96,24 +96,49 @@ const MainMenu = () => {
           <DialogContent className="bg-gray-200 px-16 py-10 text-gray-900 rounded-3xl">
             <DialogHeader>
               <DialogTitle className='text-3xl font-black leading-relaxed text-center mb-5'>
-                Type the Meeting link here
+                Join a Meeting
               </DialogTitle>
 
-              <DialogDescription className='flex flex-col gap-3 items-center'>
+              <DialogDescription className='flex flex-col gap-4 items-center pt-2'>
+                <span className="text-gray-600 text-sm">Paste the meeting link or ID below</span>
                 <Input
                   type='text'
-                  placeholder="Meeting Link or ID"
+                  placeholder="https://…/meeting/abc-123  or  abc-123"
                   onChange={(e) => setValues({ ...values, link: e.target.value })}
                   value={values.link}
-                  className='inputs'
+                  className='inputs w-full'
                 />
 
                 <Button
-                  className='mt-5 font-extrabold text-lg text-white rounded-xl
+                  className='mt-3 font-extrabold text-lg text-white rounded-xl
                   bg-blue-700 py-5 px-10 hover:bg-blue-900 hover:scale-110
                   transition ease-in-out delay-75 duration-700 hover:-translate-y-1 cursor-pointer'
                   onClick={() => {
-                    if (values.link.trim()) router.push(values.link.trim());
+                    const raw = values.link.trim();
+                    if (!raw) return;
+
+                    // Extract the meeting ID whether the user pasted a full URL or just the ID
+                    let meetingId = raw;
+                    try {
+                      const url = new URL(raw);
+                      // e.g. /meeting/abc-123  →  last segment is the ID
+                      const segments = url.pathname.split('/').filter(Boolean);
+                      const idx = segments.indexOf('meeting');
+                      if (idx !== -1 && segments[idx + 1]) {
+                        meetingId = segments[idx + 1];
+                      }
+                    } catch {
+                      // raw is already just an ID — use as-is
+                    }
+
+                    // Mark this browser as a guest (not host) for this meeting
+                    // We don't overwrite an existing host entry so the host stays the host
+                    if (!sessionStorage.getItem(`meeting_${meetingId}_host`)) {
+                      sessionStorage.setItem(`meeting_${meetingId}_host`, '__guest__');
+                    }
+
+                    setValues({ ...values, link: '' });
+                    router.push(`/meeting/${meetingId}`);
                   }}>
                   Join Meeting
                 </Button>
