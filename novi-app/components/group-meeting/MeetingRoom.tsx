@@ -96,35 +96,29 @@ const MeetingRoom = ({
   }
 
   return (
-    <div className="relative min-h-screen bg-gray-950 flex flex-col items-center justify-center overflow-hidden">
+    <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
 
       {/* Meeting description */}
       {description && (
-        <div className="absolute top-5 left-1/2 -translate-x-1/2 z-10
-          bg-gray-800/80 backdrop-blur-sm text-white text-sm px-5 py-2 rounded-full shadow-lg">
-          {description}
-        </div>
-      )}
-
-      {/* Host badge */}
-      {isHost && (
-        <div className="absolute top-5 right-5 z-10
-          bg-orange-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
-          Host
+        <div className="flex-shrink-0 flex justify-center pt-4 z-10">
+          <div className="bg-gray-800/80 backdrop-blur-sm text-white text-sm px-5 py-2 rounded-full shadow-lg">
+            {description}
+          </div>
         </div>
       )}
 
       {/*
         ── Main content row ──
-        Video + participants panel sit side-by-side.
-        The row is constrained to max-w so nothing overflows.
-        We use a fixed aspect-video wrapper so both children share the same height.
+        flex-1 fills all space between description bar and fixed navbar.
+        pb-24 clears the fixed navbar (bottom-6 + ~4rem height).
+        items-stretch makes panel match video height automatically.
       */}
-      <div className="w-full px-4 flex items-stretch justify-center gap-3"
-        style={{ maxWidth: showParticipants ? '1100px' : '768px' }}
+      <div
+        className="flex-1 flex items-stretch justify-center gap-3 px-4 pb-24 pt-3 min-h-0"
+        style={{ maxWidth: showParticipants ? '1400px' : '100%', margin: '0 auto', width: '100%' }}
       >
-        {/* Video tile — grows to fill available width, keeps 16/9 */}
-        <div className="relative flex-1 min-w-0 aspect-video bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+        {/* Video tile — fills all available height */}
+        <div className="relative flex-1 min-w-0 bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
           {(cameraError || !isCameraOn) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10">
               <div className="w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center">
@@ -152,7 +146,7 @@ const MeetingRoom = ({
           )}
         </div>
 
-        {/* Participants panel — same height as video via align-stretch on parent */}
+        {/* Participants panel — same height as video via items-stretch */}
         {showParticipants && (
           <ParticipantsPanel
             participants={participants}

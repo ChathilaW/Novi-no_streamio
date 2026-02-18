@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 import { HomeIcon } from '@heroicons/react/24/solid'
 import Loading from '@/components/Loading'
-import MeetingSetup from '@/components/MeetingSetup'
-import MeetingRoom from '@/components/MeetingRoom'
+import MeetingSetup from '@/components/group-meeting/MeetingSetup'
+import MeetingRoom from '@/components/group-meeting/MeetingRoom'
 import useMeetingStatus from '@/hooks/useMeetingStatus'
 
 const MeetingPage = () => {

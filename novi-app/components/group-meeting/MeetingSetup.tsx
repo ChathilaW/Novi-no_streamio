@@ -7,7 +7,7 @@ import {
   MicrophoneIcon,
   SpeakerXMarkIcon,
 } from '@heroicons/react/24/solid'
-import { Button } from './ui/button'
+import { Button } from '@/components/ui/button'
 
 interface MeetingSetupProps {
   onJoin: (cameraOn: boolean, micOn: boolean) => void
