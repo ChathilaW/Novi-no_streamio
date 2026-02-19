@@ -14,11 +14,11 @@ interface UseDistractionDetectionOptions {
  * useDistractionDetection
  *
  * Runs combined.js distraction detection locally on the participant's webcam.
+ * All cumulative counters are kept client-side (Vercel-safe stateless relay).
  *
- * All cumulative counters (totalChecks, distractedChecks, peak) are kept in
- * client-side refs and sent with every POST — making the server a stateless
- * relay that just stores the latest snapshot. This is Vercel-safe: no
- * serverless instance needs shared in-memory state.
+ * NO FACE smoothing: requires NO_FACE_THRESHOLD consecutive NO FACE frames
+ * before treating the participant as undetected. Single dropped frames reuse
+ * the last known FOCUSED/DISTRACTED status instead, eliminating false positives.
  */
 const useDistractionDetection = ({
   videoRef,
@@ -34,13 +34,17 @@ const useDistractionDetection = ({
     ((video: HTMLVideoElement, w: number, h: number, ts: number) => { status: string } | null) | null
   >(null)
 
-  // Client-side cumulative counters — source of truth for distraction stats
+  // Client-side cumulative counters
   const totalChecksRef = useRef(0)
   const distractedChecksRef = useRef(0)
   const peakDistractionPctRef = useRef(0)
   const peakDistractionTimeRef = useRef(0)
 
-  // Dynamically import combined.js (avoids SSR issues with MediaPipe)
+  // NO FACE smoothing — only report NO FACE after N consecutive misses
+  const consecutiveNoFaceRef = useRef(0)
+  const lastKnownStatusRef = useRef<'FOCUSED' | 'DISTRACTED' | null>(null)
+  const NO_FACE_THRESHOLD = 8 // ~1.6s at 200ms intervals
+
   useEffect(() => {
     if (!meetingId || !participantId) return
 
@@ -63,7 +67,6 @@ const useDistractionDetection = ({
     return () => {
       cancelled = true
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      // Best-effort cleanup
       fetch(`/api/meeting/${meetingId}/distraction?participantId=${participantId}`, {
         method: 'DELETE',
         keepalive: true,
@@ -71,7 +74,6 @@ const useDistractionDetection = ({
     }
   }, [meetingId, participantId])
 
-  // Detection loop
   useEffect(() => {
     if (!isCameraOn) return
 
@@ -86,13 +88,29 @@ const useDistractionDetection = ({
       ) {
         const result = detectRef.current(video, video.videoWidth, video.videoHeight, timestamp)
 
-        // Throttle POST to ~5/s
         if (result && timestamp - lastPostRef.current > 200) {
           lastPostRef.current = timestamp
 
-          const status = result.status as 'FOCUSED' | 'DISTRACTED' | 'NO FACE' | 'ERROR'
+          let status = result.status as 'FOCUSED' | 'DISTRACTED' | 'NO FACE' | 'ERROR'
 
-          // Update local counters
+          // Smooth out transient NO FACE frames
+          if (status === 'NO FACE') {
+            consecutiveNoFaceRef.current += 1
+            if (
+              consecutiveNoFaceRef.current < NO_FACE_THRESHOLD &&
+              lastKnownStatusRef.current !== null
+            ) {
+              // Not enough consecutive misses yet — reuse last known good status
+              status = lastKnownStatusRef.current
+            }
+          } else {
+            consecutiveNoFaceRef.current = 0
+            if (status === 'FOCUSED' || status === 'DISTRACTED') {
+              lastKnownStatusRef.current = status
+            }
+          }
+
+          // Update counters only for meaningful statuses
           if (status === 'FOCUSED' || status === 'DISTRACTED') {
             totalChecksRef.current += 1
             if (status === 'DISTRACTED') distractedChecksRef.current += 1
@@ -102,13 +120,11 @@ const useDistractionDetection = ({
           const distracted = distractedChecksRef.current
           const currentPct = total > 0 ? Math.round((distracted / total) * 100) : 0
 
-          // Update peak
           if (currentPct > peakDistractionPctRef.current) {
             peakDistractionPctRef.current = currentPct
             peakDistractionTimeRef.current = Date.now()
           }
 
-          // Send full snapshot — server just overwrites, no accumulation needed
           fetch(`/api/meeting/${meetingId}/distraction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
