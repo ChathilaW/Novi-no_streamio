@@ -6,6 +6,7 @@ interface UseDistractionDetectionOptions {
   videoRef: React.RefObject<HTMLVideoElement | null>
   meetingId: string
   participantId: string
+  name: string
   isCameraOn: boolean
 }
 
@@ -22,6 +23,7 @@ const useDistractionDetection = ({
   videoRef,
   meetingId,
   participantId,
+  name,
   isCameraOn,
 }: UseDistractionDetectionOptions) => {
   const rafRef = useRef<number | null>(null)
@@ -82,7 +84,7 @@ const useDistractionDetection = ({
           fetch(`/api/meeting/${meetingId}/distraction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ participantId, status }),
+            body: JSON.stringify({ participantId, name, status }),
           }).catch(() => {})
         }
       }

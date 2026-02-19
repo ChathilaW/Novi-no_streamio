@@ -11,16 +11,24 @@ import {
   CheckIcon,
 } from '@heroicons/react/24/solid'
 import type { Participant } from '@/hooks/useParticipants'
+import useGroupDistraction from '@/hooks/useGroupDistraction'
 
 interface ParticipantsPanelProps {
   participants: Participant[]
+  meetingId: string
   isOpen: boolean
   onClose: () => void
   copied: boolean
   copyLink: () => void
 }
 
-const ParticipantsPanel = ({ participants, isOpen, onClose, copied, copyLink }: ParticipantsPanelProps) => {
+const ParticipantsPanel = ({ participants, meetingId, isOpen, onClose, copied, copyLink }: ParticipantsPanelProps) => {
+  // Live per-participant distraction stats
+  const { participants: distractionStats } = useGroupDistraction(meetingId)
+
+  // Build a lookup map: participantId → distractionPct
+  const distractionMap = new Map(distractionStats.map((d) => [d.participantId, d.distractionPct]))
+
   if (!isOpen) return null
 
   // Sort: host first, then alphabetically
@@ -30,11 +38,18 @@ const ParticipantsPanel = ({ participants, isOpen, onClose, copied, copyLink }: 
     return a.name.localeCompare(b.name)
   })
 
+  const getPctColor = (pct: number | undefined) => {
+    if (pct === undefined) return 'text-gray-600'
+    if (pct >= 75) return 'text-red-400'
+    if (pct >= 40) return 'text-yellow-400'
+    return 'text-green-400'
+  }
+
   return (
     <div
       className="
         flex flex-col
-        w-64 flex-shrink-0
+        w-80 flex-shrink-0
         bg-gray-900/95 backdrop-blur-md
         rounded-2xl
         border border-gray-700/50
@@ -63,56 +78,78 @@ const ParticipantsPanel = ({ participants, isOpen, onClose, copied, copyLink }: 
         </button>
       </div>
 
+      {/* Column headings */}
+      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+        <div className="w-8 flex-shrink-0" />          {/* avatar spacer */}
+        <span className="flex-1 text-[9px] text-gray-600 uppercase tracking-widest min-w-0">Name</span>
+        <span className="text-[9px] text-gray-600 uppercase tracking-widest w-10 text-center flex-shrink-0">Dist%</span>
+        <span className="text-[9px] text-gray-600 uppercase tracking-widest flex-shrink-0">Cam/Mic</span>
+      </div>
+
       {/* Participant list — scrollable, fills remaining height */}
-      <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1 min-h-0">
+      <div className="flex-1 overflow-y-auto py-1 px-2 space-y-1 min-h-0">
         {sorted.length === 0 ? (
           <p className="text-gray-500 text-xs text-center mt-8">No participants yet</p>
         ) : (
-          sorted.map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl
-                bg-gray-800/60 hover:bg-gray-800/90 transition-colors duration-150"
-            >
-              {/* Avatar */}
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600
-                flex items-center justify-center flex-shrink-0 shadow-md">
-                <span className="text-white text-xs font-bold uppercase">
-                  {p.name.charAt(0)}
-                </span>
-              </div>
-
-              {/* Name + host badge */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-white text-xs font-medium truncate">
-                    {p.name}
+          sorted.map((p) => {
+            const pct = distractionMap.get(p.id)
+            return (
+              <div
+                key={p.id}
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl
+                  bg-gray-800/60 hover:bg-gray-800/90 transition-colors duration-150"
+              >
+                {/* Avatar */}
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600
+                  flex items-center justify-center flex-shrink-0 shadow-md">
+                  <span className="text-white text-xs font-bold uppercase">
+                    {p.name.charAt(0)}
                   </span>
-                  {p.isHost && (
-                    <span className="bg-orange-500/20 text-orange-400 text-[9px]
-                      font-bold px-1.5 py-0.5 rounded-full border border-orange-500/30
-                      flex-shrink-0">
-                      Host
+                </div>
+
+                {/* Name + host badge */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-white text-xs font-medium truncate">
+                      {p.name}
                     </span>
+                    {p.isHost && (
+                      <span className="bg-orange-500/20 text-orange-400 text-[9px]
+                        font-bold px-1.5 py-0.5 rounded-full border border-orange-500/30
+                        flex-shrink-0">
+                        Host
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Live distraction % */}
+                <div className="w-10 text-center flex-shrink-0">
+                  {pct !== undefined ? (
+                    <span className={`text-xs font-bold tabular-nums ${getPctColor(pct)}`}>
+                      {pct}%
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-gray-700">—</span>
+                  )}
+                </div>
+
+                {/* Camera & Mic status icons */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {p.isCameraOn ? (
+                    <VideoCameraIcon className="w-3.5 h-3.5 text-gray-400" title="Camera on" />
+                  ) : (
+                    <VideoCameraSlashIcon className="w-3.5 h-3.5 text-red-500" title="Camera off" />
+                  )}
+                  {p.isMicOn ? (
+                    <MicrophoneIcon className="w-3.5 h-3.5 text-gray-400" title="Mic on" />
+                  ) : (
+                    <SpeakerXMarkIcon className="w-3.5 h-3.5 text-red-500" title="Muted" />
                   )}
                 </div>
               </div>
-
-              {/* Camera & Mic status icons */}
-              <div className="flex items-center gap-1 flex-shrink-0">
-                {p.isCameraOn ? (
-                  <VideoCameraIcon className="w-3.5 h-3.5 text-gray-400" title="Camera on" />
-                ) : (
-                  <VideoCameraSlashIcon className="w-3.5 h-3.5 text-red-500" title="Camera off" />
-                )}
-                {p.isMicOn ? (
-                  <MicrophoneIcon className="w-3.5 h-3.5 text-gray-400" title="Mic on" />
-                ) : (
-                  <SpeakerXMarkIcon className="w-3.5 h-3.5 text-red-500" title="Muted" />
-                )}
-              </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
@@ -132,7 +169,7 @@ const ParticipantsPanel = ({ participants, isOpen, onClose, copied, copyLink }: 
           {copied ? (
             <><CheckIcon className="w-4 h-4" />Link Copied!</>
           ) : (
-            <><LinkIcon className="w-4 h-4" />Invite</>  
+            <><LinkIcon className="w-4 h-4" />Invite</>
           )}
         </button>
       </div>

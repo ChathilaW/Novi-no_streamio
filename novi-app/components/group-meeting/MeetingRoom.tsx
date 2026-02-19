@@ -66,6 +66,7 @@ const MeetingRoom = ({
     videoRef,
     meetingId,
     participantId,
+    name: participantName,
     isCameraOn,
   })
 
@@ -170,6 +171,7 @@ const MeetingRoom = ({
         {showParticipants && (
           <ParticipantsPanel
             participants={participants}
+            meetingId={meetingId}
             isOpen={showParticipants}
             onClose={() => setShowParticipants(false)}
             copied={copied}
