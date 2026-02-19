@@ -13,11 +13,12 @@ interface UseDistractionDetectionOptions {
 /**
  * useDistractionDetection
  *
- * Runs combined.js distraction detection on the local webcam feed and
- * POSTs the participant's status to /api/meeting/[id]/distraction every ~1s.
+ * Runs combined.js distraction detection locally on the participant's webcam.
  *
- * The ML model runs entirely in the browser — no video is sent to the server,
- * only the resulting status string.
+ * All cumulative counters (totalChecks, distractedChecks, peak) are kept in
+ * client-side refs and sent with every POST — making the server a stateless
+ * relay that just stores the latest snapshot. This is Vercel-safe: no
+ * serverless instance needs shared in-memory state.
  */
 const useDistractionDetection = ({
   videoRef,
@@ -29,7 +30,15 @@ const useDistractionDetection = ({
   const rafRef = useRef<number | null>(null)
   const lastPostRef = useRef<number>(0)
   const initializedRef = useRef(false)
-  const detectRef = useRef<((video: HTMLVideoElement, w: number, h: number, ts: number) => { status: string } | null) | null>(null)
+  const detectRef = useRef<
+    ((video: HTMLVideoElement, w: number, h: number, ts: number) => { status: string } | null) | null
+  >(null)
+
+  // Client-side cumulative counters — source of truth for distraction stats
+  const totalChecksRef = useRef(0)
+  const distractedChecksRef = useRef(0)
+  const peakDistractionPctRef = useRef(0)
+  const peakDistractionTimeRef = useRef(0)
 
   // Dynamically import combined.js (avoids SSR issues with MediaPipe)
   useEffect(() => {
@@ -77,14 +86,41 @@ const useDistractionDetection = ({
       ) {
         const result = detectRef.current(video, video.videoWidth, video.videoHeight, timestamp)
 
-        // Throttle POST to once per second
+        // Throttle POST to ~5/s
         if (result && timestamp - lastPostRef.current > 200) {
           lastPostRef.current = timestamp
+
           const status = result.status as 'FOCUSED' | 'DISTRACTED' | 'NO FACE' | 'ERROR'
+
+          // Update local counters
+          if (status === 'FOCUSED' || status === 'DISTRACTED') {
+            totalChecksRef.current += 1
+            if (status === 'DISTRACTED') distractedChecksRef.current += 1
+          }
+
+          const total = totalChecksRef.current
+          const distracted = distractedChecksRef.current
+          const currentPct = total > 0 ? Math.round((distracted / total) * 100) : 0
+
+          // Update peak
+          if (currentPct > peakDistractionPctRef.current) {
+            peakDistractionPctRef.current = currentPct
+            peakDistractionTimeRef.current = Date.now()
+          }
+
+          // Send full snapshot — server just overwrites, no accumulation needed
           fetch(`/api/meeting/${meetingId}/distraction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ participantId, name, status }),
+            body: JSON.stringify({
+              participantId,
+              name,
+              status,
+              totalChecks: total,
+              distractedChecks: distracted,
+              peakDistractionPct: peakDistractionPctRef.current,
+              peakDistractionTime: peakDistractionTimeRef.current,
+            }),
           }).catch(() => {})
         }
       }
@@ -97,7 +133,7 @@ const useDistractionDetection = ({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [isCameraOn, meetingId, participantId, videoRef])
+  }, [isCameraOn, meetingId, participantId, name, videoRef])
 }
 
 export default useDistractionDetection
