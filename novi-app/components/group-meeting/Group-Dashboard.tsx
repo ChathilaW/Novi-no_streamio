@@ -1,130 +1,120 @@
 'use client'
 
-import Speedometer from './Group-Speedometer';
+import { XMarkIcon, ChartBarIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid'
+import GroupSpeedometer from './Group-Speedometer'
+import useGroupDistraction from '@/hooks/useGroupDistraction'
+
 type Props = {
-  stats: any;
-  isVideoEnabled: boolean;
-  focusedCount: number;
-  totalCount: number;
-  onClose: () => void;
-};
+  meetingId: string
+  isOpen: boolean
+  onClose: () => void
+}
 
-export default function Dashboard({ stats, isVideoEnabled, focusedCount, totalCount, onClose }: Props) {
-  // Calculate focus percentage
-  const focusPercentage = totalCount > 0 ? (focusedCount / totalCount) * 100 : 0;
+const DISTRACTION_THRESHOLD = 75 // percent
 
-   // Helper function to determine head direction based on yaw and pitch
-  const getHeadDirection = (yaw: number, pitch: number): string => {
-    const YAW_THRESHOLD = 5.0;
-    const PITCH_LOW_THRESHOLD = 6.5;
-    const PITCH_HIGH_THRESHOLD = 18.0;
+export default function GroupDashboard({ meetingId, isOpen, onClose }: Props) {
+  const { distractedCount, totalCount, participants } = useGroupDistraction(meetingId)
 
-    if (yaw < -YAW_THRESHOLD) return "RIGHT";
-    if (yaw > YAW_THRESHOLD) return "LEFT";
-    if (pitch < PITCH_LOW_THRESHOLD) return "UP";
-    if (pitch > PITCH_HIGH_THRESHOLD) return "DOWN";
-    return "CENTER";
-  };
+  if (!isOpen) return null
+
+  // Participants with cumulative distraction > threshold, sorted worst first
+  const highlyDistracted = participants
+    .filter((p) => p.totalChecks >= 10 && p.distractionPct >= DISTRACTION_THRESHOLD)
+    .sort((a, b) => b.distractionPct - a.distractionPct)
 
   return (
-    <div className="w-80 bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-4">
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-white font-semibold">Distraction Detection</h3>
-        <button 
-          onClick={onClose} 
-          className="text-gray-400 hover:text-white">
-          ✕
+    <div
+      className="
+        flex flex-col
+        w-72 flex-shrink-0
+        bg-gray-900/95 backdrop-blur-md
+        rounded-2xl
+        border border-gray-700/50
+        shadow-2xl
+        overflow-hidden
+        animate-slide-in-right
+      "
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/50 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <ChartBarIcon className="w-4 h-4 text-purple-400" />
+          <span className="text-white font-semibold text-sm">Group Dashboard</span>
+        </div>
+        <button
+          onClick={onClose}
+          aria-label="Close dashboard"
+          className="w-6 h-6 rounded-full flex items-center justify-center
+            text-gray-400 hover:text-white hover:bg-gray-700 transition-all duration-150"
+        >
+          <XMarkIcon className="w-3.5 h-3.5" />
         </button>
       </div>
-      {/* Speedometer */}
-      <Speedometer percentage={focusPercentage} />
 
-      {/* Divider */}
-      <div className="border-t border-gray-700 my-3"></div>
+      {/* Scrollable body */}
+      <div className="flex-1 overflow-y-auto min-h-0">
 
-      {/* Current Status */}
+        {/* ── Speedometer section ── */}
+        <div className="flex items-center justify-center px-4 py-5 border-b border-gray-700/50">
+          {totalCount === 0 ? (
+            <div className="text-center py-4">
+              <p className="text-gray-500 text-sm">Waiting for participants…</p>
+              <p className="text-gray-600 text-xs mt-1">Detection starts when cameras are on</p>
+            </div>
+          ) : (
+            <GroupSpeedometer
+              distractedCount={distractedCount}
+              totalCount={totalCount}
+            />
+          )}
+        </div>
 
-      {!isVideoEnabled ? (
-        <p className="text-gray-400 text-sm">Camera turned off</p>
-      ) : !stats || stats === null ? (
-        <p className="text-gray-400 text-sm">Initializing...</p>
-      ) : stats.status === "NO FACE" ? (
-        <p className="text-yellow-400 text-sm font-semibold">⚠️ No face detected</p>
-      ) : stats.status === "ERROR" ? (
-        <p className="text-red-400 text-sm font-semibold">❌ Detection error</p>
-      ) : (
-        <div className="space-y-3 text-sm">
-          {/* Status Badge */}
-          <div className="flex items-center gap-2">
-            <span className="text-gray-300">Status:</span>
-            <span className={`px-3 py-1 rounded-full font-semibold ${
-              stats.status === "FOCUSED" 
-                ? "bg-green-500/20 text-green-400" 
-                : "bg-red-500/20 text-red-400"
-            }`}>
-              {stats.status === "FOCUSED" ? "✓ FOCUSED" : "⚠ DISTRACTED"}
+        {/* ── Distracted Participants section ── */}
+        <div className="px-3 py-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <ExclamationTriangleIcon className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+            <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+              Distracted Participants
             </span>
+            <span className="ml-auto text-[10px] text-gray-600">&gt;{DISTRACTION_THRESHOLD}%</span>
           </div>
 
-          {/* Head Direction */}
-          {stats.headPosture && (
-            <div className="border-t border-gray-700 pt-2">
-              <p className="text-gray-400 mb-1">Head Direction:</p>
-              <div className="bg-gray-800 rounded p-2">
-                <p className={`font-semibold text-center ${
-                  getHeadDirection(stats.headPosture.yaw, stats.headPosture.pitch) === "CENTER"
-                    ? "text-green-400"
-                    : "text-red-400"
-                }`}>
-                  {getHeadDirection(stats.headPosture.yaw, stats.headPosture.pitch)}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div className="bg-gray-800 rounded p-2">
-                  <p className="text-gray-500 text-xs">Horizontal</p>
-                  <p className="text-white font-mono text-xs">{stats.headPosture.yaw?.toFixed(2)}</p>
-                </div>
-                <div className="bg-gray-800 rounded p-2">
-                  <p className="text-gray-500 text-xs">Vertical</p>
-                  <p className="text-white font-mono text-xs">{stats.headPosture.pitch?.toFixed(2)}</p>
-                </div>
-                <div className="bg-gray-800 rounded p-2">
-                  <p className="text-gray-500 text-xs">Yaw</p>
-                  <p className="text-white font-mono text-xs">{stats.headPosture.yaw?.toFixed(1)}°</p>
-                </div>
-                <div className="bg-gray-800 rounded p-2">
-                  <p className="text-gray-500 text-xs">Pitch</p>
-                   <p className="text-white font-mono text-xs">{stats.headPosture.pitch?.toFixed(1)}°</p>
-                </div>
-              </div>
-            </div>
-          )}
+          {totalCount === 0 ? (
+            <p className="text-gray-600 text-xs text-center py-3">No data yet</p>
+          ) : highlyDistracted.length === 0 ? (
+            <p className="text-green-500/70 text-xs text-center py-3">
+              ✓ No highly distracted participants
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {highlyDistracted.map((p) => (
+                <div
+                  key={p.participantId}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20"
+                >
+                  {/* Avatar */}
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-orange-600
+                    flex items-center justify-center flex-shrink-0 shadow">
+                    <span className="text-white text-[10px] font-bold uppercase">
+                      {p.name.charAt(0)}
+                    </span>
+                  </div>
 
-          {/* Gaze Direction (only when focused) */}
-          {stats.gaze && (
-            <div className="border-t border-gray-700 pt-2">
-              <p className="text-gray-400 mb-1">Gaze Direction:</p>
-              <div className="bg-gray-800 rounded p-2">
-                <p className={`font-semibold text-center ${
-                  stats.gaze.gaze === "CENTER" ? "text-green-400" : "text-red-400"
-                }`}>
-                  {stats.gaze.gaze}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div className="bg-gray-800 rounded p-2">
-                  <p className="text-gray-500 text-xs">Horizontal</p>
-                  <p className="text-white font-mono text-xs">{stats.gaze.horizontalRatio?.toFixed(2)}</p>
+                  {/* Name */}
+                  <span className="flex-1 text-xs text-white font-medium truncate min-w-0">
+                    {p.name}
+                  </span>
+
+                  {/* Distraction % */}
+                  <span className="text-xs font-bold text-red-400 flex-shrink-0">
+                    {p.distractionPct}%
+                  </span>
                 </div>
-                <div className="bg-gray-800 rounded p-2">
-                  <p className="text-gray-500 text-xs">Vertical</p>
-                  <p className="text-white font-mono text-xs">{stats.gaze.verticalRatio?.toFixed(4)}</p>
-                </div>
-              </div>
+              ))}
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
-  );
+  )
 }
