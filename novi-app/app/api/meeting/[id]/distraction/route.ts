@@ -4,14 +4,22 @@ interface DistractionEntry {
   participantId: string
   name: string
   status: 'FOCUSED' | 'DISTRACTED' | 'NO FACE' | 'ERROR'
-  totalChecks: number       // every POST with FOCUSED or DISTRACTED increments this
-  distractedChecks: number  // increments only when DISTRACTED
-  peakDistractionPct: number  // highest rolling distraction % seen so far
-  peakDistractionTime: number // epoch ms when peakDistractionPct was recorded
+  totalChecks: number
+  distractedChecks: number
+  peakDistractionPct: number
+  peakDistractionTime: number
   lastSeen: number
 }
 
-/** In-memory store: meetingId → Map<participantId, DistractionEntry> */
+/**
+ * In-memory relay store: meetingId → Map<participantId, DistractionEntry>
+ *
+ * The server is a STATELESS RELAY — all cumulative counters come from the
+ * client in every POST body. The server just stores the latest snapshot and
+ * prunes stale entries. This is safe on Vercel because the client is the
+ * single source of truth for counts; any serverless instance can serve GETs
+ * since it will receive fresh data in the next POST cycle (~200ms).
+ */
 const meetingDistraction = new Map<string, Map<string, DistractionEntry>>()
 
 const STALE_THRESHOLD_MS = 10_000
@@ -34,14 +42,7 @@ function pruneStale(room: Map<string, DistractionEntry>) {
 
 /**
  * GET /api/meeting/[id]/distraction
- * Returns {
- *   distractedCount,   — currently DISTRACTED participants
- *   totalCount,        — participants with FOCUSED or DISTRACTED status
- *   participants: [{   — per-participant stats
- *     participantId, name,
- *     totalChecks, distractedChecks, distractionPct
- *   }]
- * }
+ * Returns { distractedCount, totalCount, participants[] }
  */
 export async function GET(
   _req: NextRequest,
@@ -80,8 +81,10 @@ export async function GET(
 
 /**
  * POST /api/meeting/[id]/distraction
- * Body: { participantId, name, status }
- * Increments cumulative counters (never reset while participant is in meeting).
+ * Body: { participantId, name, status, totalChecks, distractedChecks,
+ *         peakDistractionPct, peakDistractionTime }
+ *
+ * Server simply overwrites — the client owns all counters.
  */
 export async function POST(
   req: NextRequest,
@@ -92,32 +95,23 @@ export async function POST(
     participantId: string
     name: string
     status: DistractionEntry['status']
+    totalChecks: number
+    distractedChecks: number
+    peakDistractionPct: number
+    peakDistractionTime: number
   }
   const room = getRoom(id)
-  const existing = room.get(body.participantId)
 
-  const totalChecks = (existing?.totalChecks ?? 0) +
-    (body.status === 'FOCUSED' || body.status === 'DISTRACTED' ? 1 : 0)
-  const distractedChecks = (existing?.distractedChecks ?? 0) +
-    (body.status === 'DISTRACTED' ? 1 : 0)
-
-  const newPct = totalChecks > 0 ? Math.round((distractedChecks / totalChecks) * 100) : 0
-  const now = Date.now()
-  const peakDistractionPct = Math.max(existing?.peakDistractionPct ?? 0, newPct)
-  const peakDistractionTime =
-    newPct >= peakDistractionPct && newPct > (existing?.peakDistractionPct ?? 0)
-      ? now
-      : (existing?.peakDistractionTime ?? now)
-
+  // Pure overwrite — no server-side accumulation
   room.set(body.participantId, {
     participantId: body.participantId,
     name: body.name,
     status: body.status,
-    totalChecks,
-    distractedChecks,
-    peakDistractionPct,
-    peakDistractionTime,
-    lastSeen: now,
+    totalChecks: body.totalChecks ?? 0,
+    distractedChecks: body.distractedChecks ?? 0,
+    peakDistractionPct: body.peakDistractionPct ?? 0,
+    peakDistractionTime: body.peakDistractionTime ?? 0,
+    lastSeen: Date.now(),
   })
 
   pruneStale(room)
